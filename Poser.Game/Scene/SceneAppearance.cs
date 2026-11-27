@@ -31,7 +31,7 @@ namespace Poser.Game.Scene;
 /// appearance back. Every MCDF import and export goes through the usual MCDF
 /// code; this class only handles the files a scene needs for it.
 /// </summary>
-internal sealed class SceneAppearanceRuntime : IDisposable
+internal sealed class SceneAppearance : IDisposable
 {
     private readonly SessionAppearanceFiles _historyAppearanceFiles = new(DeleteQuietly);
     private readonly SceneRuntimeHandles _handles;
@@ -51,7 +51,7 @@ internal sealed class SceneAppearanceRuntime : IDisposable
 
     private readonly IPluginLog _log;
 
-    public SceneAppearanceRuntime(
+    public SceneAppearance(
         SceneRuntimeHandles handles,
         IFramework framework,
         ISceneDocumentStore documents,

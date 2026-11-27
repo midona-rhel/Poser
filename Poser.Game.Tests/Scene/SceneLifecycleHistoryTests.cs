@@ -645,7 +645,7 @@ public sealed class SceneLifecycleHistoryTests
 
     /// <summary>Keeps map objects separate from adopted handles so release can
     /// restore their original placement and later adoption can find them again.</summary>
-    private sealed class FakeWorldObjects : IWorldObjectLifecycle
+    private sealed class FakeWorldObjects : IWorldObjectReleaseRestore
     {
         private readonly Dictionary<nint, Transform> _map = new();
         private readonly Dictionary<nint, WorldObjectIncarnation> _identities = new();
@@ -769,7 +769,7 @@ public sealed class SceneLifecycleHistoryTests
         public Transform MapPlacement { get; set; }
     }
 
-    private sealed class FakeProps : IPropLifecycle
+    private sealed class FakeProps : IPropRemoveRestore
     {
         private readonly List<object> _props = new();
 
@@ -832,7 +832,7 @@ public sealed class SceneLifecycleHistoryTests
         public void Destroy() => IsValid = false;
     }
 
-    private sealed class FakeOverlays : IOverlayLifecycle
+    private sealed class FakeOverlays : IOverlayRemoveRestore
     {
         private readonly List<object> _overlays = new();
 
@@ -888,7 +888,7 @@ public sealed class SceneLifecycleHistoryTests
         public void Destroy() => IsValid = false;
     }
 
-    private sealed class FakeActors : IActorLifecycle
+    private sealed class FakeActors : IActorRemoveRestore
     {
         public string GetName(object actor) => ((IActor)actor).Name;
         public void SetName(object actor, string name) => ((IActor)actor).Name = name;

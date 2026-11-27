@@ -27,7 +27,7 @@ internal sealed record ActorRuntimeState(
 internal sealed record LifecycleIk(PoseSlot Slot, int Partial, string Bone,
     IkChainConfig Config, BoneId? TargetBone, SelectionId? TargetEntity);
 
-internal sealed partial class ActorServiceLifecycle
+internal sealed partial class ActorRemoveRestore
 {
     private readonly ActorStateSnapshots _actorStates;
     private readonly Integration.ISpawnCollectionPort _collections;
@@ -110,7 +110,7 @@ internal sealed partial class ActorServiceLifecycle
         Func<bool>? current)
     {
         if (actor.Address == 0 || current?.Invoke() == false) return;
-        if (attempts <= 0) { Note($"'{actor.Name}': lifecycle restore never became ready."); return; }
+        if (attempts <= 0) { Note($"'{actor.Name}': its undo never became ready."); return; }
         var runtime = state.Runtime!;
         void Next() => _framework.RunOnTick(
             () => PrepareRuntime(actor, state, attempts - 1, current), delayTicks: 1);
@@ -155,7 +155,7 @@ internal sealed partial class ActorServiceLifecycle
                         delayTicks: state.RestoresPaused ? 4 : 1);
                 });
             }
-            catch (Exception ex) { Note($"Lifecycle appearance restore failed: {ex.Message}"); }
+            catch (Exception ex) { Note($"Putting the appearance back failed: {ex.Message}"); }
         }
     }
 

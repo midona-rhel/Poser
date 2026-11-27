@@ -6,14 +6,14 @@ namespace Poser.Game.Scene;
 
 /// <summary>Advances pending scene creation on every framework update,
 /// independently of UI windows.</summary>
-public sealed class SceneCreationRuntime : IDisposable
+public sealed class SceneCreationTick : IDisposable
 {
     private readonly IFramework _framework;
     private readonly PendingSceneCreation _pending;
     private readonly SceneDuplication _duplication;
     private readonly WorldAcquisitionControl _acquisition;
 
-    public SceneCreationRuntime(IFramework framework, PendingSceneCreation pending, SceneDuplication duplication, WorldAcquisitionControl acquisition)
+    public SceneCreationTick(IFramework framework, PendingSceneCreation pending, SceneDuplication duplication, WorldAcquisitionControl acquisition)
     {
         _framework = framework;
         _pending = pending;

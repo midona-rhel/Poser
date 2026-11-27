@@ -17,10 +17,10 @@ namespace Poser.Game.Scene;
 /// </summary>
 internal sealed class SceneLoadTransaction(
     SceneWorkflow workflow,
-    SceneStateRuntime sceneState,
-    SceneEntityRuntime sceneEntities,
-    SceneActorRuntime actorRestore,
-    SceneAppearanceRuntime appearance,
+    GPoseSceneState sceneState,
+    SceneEntityLoader sceneEntities,
+    SceneActorRestore actorRestore,
+    SceneAppearance appearance,
     SceneHistoryBinder historyBinder,
     ISceneDocumentStore documents,
     SceneLoadStructure structure,

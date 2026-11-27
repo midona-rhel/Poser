@@ -37,7 +37,7 @@ internal readonly record struct ActorState(
 /// actor waits until the game has built its body and skeleton; callers do not
 /// wait for that.
 /// </summary>
-internal interface IActorLifecycle
+internal interface IActorRemoveRestore
 {
     string GetName(object actor);
     void SetName(object actor, string name);
@@ -95,13 +95,13 @@ internal sealed class ActorLifecycleSlot
 /// <summary>Records actor spawns and removals as undo steps. Bringing an actor
 /// back builds the body from the snapshot taken at removal, or runs the first
 /// spawn again when there is none, and then puts its saved state back.</summary>
-internal sealed class ActorLifecycleOwner
+internal sealed class ActorUndoSteps
 {
     private readonly EditHistory _history;
-    private readonly IActorLifecycle _actors;
+    private readonly IActorRemoveRestore _actors;
     private readonly LifecycleSlotOwner<IActor, ActorLifecycleSlot> _slots;
 
-    public ActorLifecycleOwner(EditHistory history, IActorLifecycle actors)
+    public ActorUndoSteps(EditHistory history, IActorRemoveRestore actors)
     {
         _history = history;
         _actors = actors;
@@ -111,7 +111,7 @@ internal sealed class ActorLifecycleOwner
             RemoveActor, RestoreActor, retainAliases: true);
     }
 
-    public IActorLifecycle Port => _actors;
+    public IActorRemoveRestore Port => _actors;
 
     public void Clear() => _slots.Clear();
 
@@ -143,7 +143,7 @@ internal sealed class ActorLifecycleOwner
         return actor;
     }
 
-    /// <summary>See <see cref="IActorLifecycle.WhenPosable"/>.</summary>
+    /// <summary>See <see cref="IActorRemoveRestore.WhenPosable"/>.</summary>
     public void WhenPosable(IActor actor, Action<IActor> act) =>
         _actors.WhenPosable(actor, a => act((IActor)a));
 

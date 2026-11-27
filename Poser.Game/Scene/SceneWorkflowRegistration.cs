@@ -19,11 +19,11 @@ public static class SceneWorkflowRegistration
             return new SceneRuntimeHandles(() => sessions.ActiveSessionGeneration);
         });
         services.AddSingleton<SceneHistoryBinder>();
-        services.AddSingleton<SceneClearRuntime>();
-        services.AddSingleton<SceneStateRuntime>();
-        services.AddSingleton<SceneAppearanceRuntime>();
-        services.AddSingleton<SceneActorRuntime>();
-        services.AddSingleton<SceneEntityRuntime>();
+        services.AddSingleton<SceneClearer>();
+        services.AddSingleton<GPoseSceneState>();
+        services.AddSingleton<SceneAppearance>();
+        services.AddSingleton<SceneActorRestore>();
+        services.AddSingleton<SceneEntityLoader>();
         services.AddSingleton<ISceneStructure, SceneStructure>();
         services.AddSingleton<SceneWorkflowObserver>();
         // The workflow is created after the services it uses. Services are
@@ -31,10 +31,10 @@ public static class SceneWorkflowRegistration
         // finishes its work first, and only then do those services remove
         // their event listeners and files.
         services.AddSingleton<SceneWorkflow>(sp => new SceneWorkflow(
-            sp.GetRequiredService<SceneStateRuntime>(),
-            sp.GetRequiredService<SceneAppearanceRuntime>(),
-            sp.GetRequiredService<SceneEntityRuntime>(),
-            sp.GetRequiredService<SceneActorRuntime>(),
+            sp.GetRequiredService<GPoseSceneState>(),
+            sp.GetRequiredService<SceneAppearance>(),
+            sp.GetRequiredService<SceneEntityLoader>(),
+            sp.GetRequiredService<SceneActorRestore>(),
             sp.GetRequiredService<SceneHistoryBinder>(),
             sp.GetRequiredService<ISceneDocumentStore>(),
             sp.GetRequiredService<SceneWorkflowObserver>(),

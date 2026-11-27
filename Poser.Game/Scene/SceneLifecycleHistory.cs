@@ -35,14 +35,14 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory,
 
     /// <summary>One helper per kind of thing keeps the slots for that kind.
     /// This class only passes calls on to them.</summary>
-    private readonly LightLifecycleOwner _lightOwner;
-    private readonly CameraLifecycleOwner _cameraOwner;
-    private readonly ActorLifecycleOwner _actorOwner;
-    private readonly PropLifecycleOwner _propOwner;
-    private readonly OverlayLifecycleOwner _overlayOwner;
-    private readonly WorldObjectLifecycleOwner _worldObjectOwner;
+    private readonly LightUndoSteps _lightOwner;
+    private readonly CameraUndoSteps _cameraOwner;
+    private readonly ActorUndoSteps _actorOwner;
+    private readonly PropUndoSteps _propOwner;
+    private readonly OverlayUndoSteps _overlayOwner;
+    private readonly WorldObjectUndoSteps _worldObjectOwner;
 
-    internal IActorLifecycle ActorStatePort => _actorOwner.Port;
+    internal IActorRemoveRestore ActorStatePort => _actorOwner.Port;
 
     /// <summary>The helpers are internal to the game code, so the plugin
     /// cannot create them. This constructor takes what they need and builds
@@ -78,13 +78,13 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory,
             history,
             lighting,
             cameras,
-            new ActorServiceLifecycle(
+            new ActorRemoveRestore(
                 configuration,
                 actors, posing, skeletons, poseFiles, poses, imports, animation, framework, log,
                 gaze, integration, mcdf, reset, bindings, bonePosing, actorManager, actorStates, collections, exports),
-            new PropServiceLifecycle(props),
-            new OverlayServiceLifecycle(overlays),
-            new WorldObjectServiceLifecycle(worldObjects),
+            new PropRemoveRestore(props),
+            new OverlayRemoveRestore(overlays),
+            new WorldObjectReleaseRestore(worldObjects),
             light => bindings.GetLightId(light) is { } id
                 ? TransformTargetId.ForLight(id) : null,
             worldObject => bindings.GetWorldObjectId((AdoptedWorldObject)worldObject) is { } id
@@ -103,10 +103,10 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory,
         EditHistory history,
         ILightingService lighting,
         IVirtualCameraService cameras,
-        IActorLifecycle actors,
-        IPropLifecycle props,
-        IOverlayLifecycle overlays,
-        IWorldObjectLifecycle worldObjects,
+        IActorRemoveRestore actors,
+        IPropRemoveRestore props,
+        IOverlayRemoveRestore overlays,
+        IWorldObjectReleaseRestore worldObjects,
         Func<ILight, TransformTargetId?>? lightTarget = null,
         Func<object, TransformTargetId?>? worldObjectTarget = null,
         Func<object, TransformTargetId?>? propTarget = null,
@@ -198,7 +198,7 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory,
     public IActor? SpawnActor(string description, Func<IActor?> spawn, IActor? source = null, string? name = null) =>
         _actorOwner.SpawnActor(description, spawn, source, name);
 
-    /// <summary>See <see cref="IActorLifecycle.WhenPosable"/>.</summary>
+    /// <summary>See <see cref="IActorRemoveRestore.WhenPosable"/>.</summary>
     public void WhenPosable(IActor actor, Action<IActor> act) =>
         _actorOwner.WhenPosable(actor, act);
 
@@ -236,17 +236,17 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory,
 
     public object? SpawnOverlay(OverlayNodeKind kind) => _overlayOwner.SpawnOverlay(kind);
 
-    internal OverlayLifecycleOwner.PendingOverlayGroup BeginOverlayGroup(
+    internal OverlayUndoSteps.PendingOverlayGroup BeginOverlayGroup(
         IReadOnlyList<OverlayNodeState> states, GroupSteps groupSteps) =>
         _overlayOwner.BeginOverlayGroup(states, groupSteps);
 
-    internal SceneGroup? TryCompleteOverlayGroup(OverlayLifecycleOwner.PendingOverlayGroup pending, string name,
+    internal SceneGroup? TryCompleteOverlayGroup(OverlayUndoSteps.PendingOverlayGroup pending, string name,
         SceneGroups groups, GroupSteps groupSteps,
         Func<object, SelectionId?> selection,
         Action<SelectionId, int>? initialize = null) =>
         _overlayOwner.TryCompleteOverlayGroup(pending, name, groups, groupSteps, selection, initialize);
 
-    internal void AbortOverlayGroup(OverlayLifecycleOwner.PendingOverlayGroup pending) =>
+    internal void AbortOverlayGroup(OverlayUndoSteps.PendingOverlayGroup pending) =>
         _overlayOwner.AbortOverlayGroup(pending);
 
     /// <summary>Adds one overlay as an undo step, from its full state: a new

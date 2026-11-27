@@ -25,10 +25,10 @@ namespace Poser.Game.Scene;
 /// and the environment and world toggles a load stamps and its rollback
 /// restores.
 /// </summary>
-internal sealed class SceneStateRuntime : IDisposable
+internal sealed class GPoseSceneState : IDisposable
 {
     private readonly SceneRuntimeHandles _handles;
-    private readonly SceneClearRuntime _clear;
+    private readonly SceneClearer _clear;
     private readonly IFramework _framework;
     private readonly ISessionGenerationSource _sessions;
     private readonly StableBindingRegistry _bindings;
@@ -39,9 +39,9 @@ internal sealed class SceneStateRuntime : IDisposable
     private readonly Poser.Game.Environment.WorldRenderingService _rendering;
     private readonly Poser.Game.Animation.AnimationSession _animation;
 
-    public SceneStateRuntime(
+    public GPoseSceneState(
         SceneRuntimeHandles handles,
-        SceneClearRuntime clear,
+        SceneClearer clear,
         IFramework framework,
         ISessionGenerationSource sessions,
         StableBindingRegistry bindings,

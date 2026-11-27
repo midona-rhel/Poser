@@ -13,7 +13,7 @@ namespace Poser.Game.Scene;
 /// parent links restored over the entities the load created.
 /// </summary>
 internal sealed class SceneLoadStructure(
-    SceneStateRuntime sceneState, ISceneStructure structure, TransformParenting parenting)
+    GPoseSceneState sceneState, ISceneStructure structure, TransformParenting parenting)
 {
     public static Dictionary<(string Kind, Guid Key), SceneEntityHandle> Tokens(
         params (string Kind, IReadOnlyDictionary<Guid, SceneEntityHandle> Entities)[] maps)

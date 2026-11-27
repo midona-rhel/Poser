@@ -11,7 +11,7 @@ namespace Poser.Game.Scene;
 /// only the named entity.
 /// </summary>
 internal sealed class SceneLoadBarriers(
-    SceneWorkflow workflow, SceneStateRuntime sceneState, SceneActorRuntime actorRestore,
+    SceneWorkflow workflow, GPoseSceneState sceneState, SceneActorRestore actorRestore,
     SceneOperation operation,
     CancellationToken cancellation)
 {

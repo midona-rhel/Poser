@@ -157,7 +157,7 @@ public sealed class WorldActorDiscoveryTests
         Assert.Equal(1, appends);
     }
 
-    private sealed class StatePort : IActorLifecycle
+    private sealed class StatePort : IActorRemoveRestore
     {
         public ActorState Current;
         private readonly Queue<Action> _pending = new();

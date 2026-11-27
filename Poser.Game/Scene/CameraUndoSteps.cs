@@ -24,16 +24,16 @@ internal sealed class CameraLifecycleSlot
     public bool HasDocument;
 }
 
-/// <summary>Owns virtual-camera lifecycle entries. A removal captures the
-/// camera's document plus the targeting and tracking state the document does
-/// not carry, so undo brings the camera back as the user last had it.</summary>
-internal sealed class CameraLifecycleOwner
+/// <summary>Records adding and removing cameras as undo steps. A removal
+/// keeps the camera's settings and the target and tracking the settings file
+/// does not hold, so undo brings the camera back as it was.</summary>
+internal sealed class CameraUndoSteps
 {
     private readonly EditHistory _history;
     private readonly IVirtualCameraService _cameras;
     private readonly LifecycleSlotOwner<IVirtualCamera, CameraLifecycleSlot> _slots;
 
-    public CameraLifecycleOwner(EditHistory history, IVirtualCameraService cameras)
+    public CameraUndoSteps(EditHistory history, IVirtualCameraService cameras)
     {
         _history = history;
         _cameras = cameras;

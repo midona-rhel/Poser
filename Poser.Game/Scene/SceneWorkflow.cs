@@ -57,10 +57,10 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
 
     private static readonly TimeSpan DisposeDrainTimeout = TimeSpan.FromSeconds(2);
 
-    private readonly SceneStateRuntime _sceneState;
-    private readonly SceneAppearanceRuntime _appearance;
-    private readonly SceneEntityRuntime _sceneEntities;
-    private readonly SceneActorRuntime _actorRestore;
+    private readonly GPoseSceneState _sceneState;
+    private readonly SceneAppearance _appearance;
+    private readonly SceneEntityLoader _sceneEntities;
+    private readonly SceneActorRestore _actorRestore;
     private readonly SceneHistoryBinder _historyBinder;
     private readonly ISceneDocumentStore _documents;
     private readonly SceneWorkflowObserver _observer;
@@ -80,10 +80,10 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
             : progress);
 
     internal SceneWorkflow(
-        SceneStateRuntime sceneState,
-        SceneAppearanceRuntime appearance,
-        SceneEntityRuntime sceneEntities,
-        SceneActorRuntime actorRestore,
+        GPoseSceneState sceneState,
+        SceneAppearance appearance,
+        SceneEntityLoader sceneEntities,
+        SceneActorRestore actorRestore,
         SceneHistoryBinder historyBinder,
         ISceneDocumentStore documents,
         SceneWorkflowObserver observer,
