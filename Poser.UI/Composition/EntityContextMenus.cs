@@ -57,7 +57,7 @@ internal sealed partial class EntityContextMenus
     private readonly Action _openSkeletonSettings;
     private readonly EntityRemovalDialog _removalDialog;
     private readonly Application.Transforms.ISelectionPlacement _placement;
-    private readonly ITransformFacade _transforms;
+    private readonly ITransformEditing _transforms;
     private readonly GraphicalBonePane _boneMap;
     private ActorId? _ctxActorId;
     private bool _ctxOpenRequested;
@@ -117,7 +117,7 @@ internal sealed partial class EntityContextMenus
         Application.Presentation.ICameraTargetControl cameraTargets,
         Controls.EntityNameModal names,
         Action openSkeletonSettings, EntityRemovalDialog removalDialog,
-        Application.Transforms.ISelectionPlacement placement, ITransformFacade transforms, GraphicalBonePane boneMap)
+        Application.Transforms.ISelectionPlacement placement, ITransformEditing transforms, GraphicalBonePane boneMap)
     {
         _actorColliderCapture = actorColliderCapture;
         _actorControl = actorControl;

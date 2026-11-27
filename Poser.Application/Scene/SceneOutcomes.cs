@@ -13,23 +13,21 @@ public enum SceneOperationKind
     Load,
 }
 
-/// <summary>Phases of the single scene transaction, in execution order.</summary>
+/// <summary>The steps of a scene save or load, in the order they run.</summary>
 public enum ScenePhase
 {
-    /// <summary>The save's FIRST phase: the raw bone-transform caches every
-    /// actor's pose is read out of are re-armed and given the update pass they
-    /// need. It exists because the caches are only current for skeletons the
-    /// per-frame rebuild qualified — refreshed by the
-    /// native capture adapter.</summary>
+    /// <summary>The save's first step: every skeleton gets one update so the
+    /// bone positions the save reads are from this frame. Without it, only
+    /// skeletons the game updated on its own this frame would be current.</summary>
     RefreshingPoses,
     Capturing,
     Writing,
     Reading,
     SpawningEntities,
     AwaitingActors,
-    /// <summary>Re-importing saved character files. It runs BEFORE everything
-    /// that hangs off an actor's body, because an MCDF import redraws the
-    /// actor and takes its draw object — and every skeleton — with it.
+    /// <summary>Applying saved appearances. It runs before anything that depends
+    /// on an actor's body, because applying an MCDF redraws the actor and
+    /// replaces its body and skeletons.
     /// </summary>
     ApplyingAppearance,
     ApplyingRelationships,
@@ -42,8 +40,9 @@ public enum ScenePhase
     ApplyingEnvironment,
     Committing,
     RollingBack,
-    /// <summary>The user cancelled; the operation is stopping its children
-    /// (a bounded drain) before it can report Cancelled.</summary>
+    /// <summary>Cancel was pressed. The operation waits, for a limited time,
+    /// for the MCDF imports or exports it started to stop before it reports
+    /// Cancelled.</summary>
     Cancelling,
     Completed,
     RolledBack,
@@ -77,11 +76,13 @@ public sealed record SceneEntityOutcome(
 /// <summary>
 /// The final result of one scene save or load. Its state is the same
 /// <see cref="OperationReceiptState"/> the operation's
-/// <see cref="OperationReceipt"/> has: <c>Applied</c> when everything came back,
-/// <c>RolledBack</c> when the load stopped and took back everything it had done,
-/// <c>Cancelled</c> when Cancel was pressed or GPose ended, and <c>Failed</c>
-/// when some parts did not come back but the rest was kept, or when taking a
-/// load back left something behind.
+/// <see cref="OperationReceipt"/> has. For a save: <c>Applied</c> when the file
+/// was written, <c>Cancelled</c> when Cancel was pressed or GPose ended, and
+/// <c>Failed</c> otherwise. For a load: <c>Applied</c> when everything came
+/// back, <c>RolledBack</c> when the load stopped and took back what it had
+/// done, <c>Cancelled</c> as for a save, and <c>Failed</c> when some parts did
+/// not come back but the rest was kept, or when taking a load back left
+/// something behind.
 /// </summary>
 public sealed record SceneOutcome(
     OperationReceiptState State,

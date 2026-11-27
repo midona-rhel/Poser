@@ -1,10 +1,14 @@
+using Poser.Application.Transforms;
 using Poser.Domain.Identity;
 using Poser.Domain.Transforms;
 
-namespace Poser.Application.Transforms;
+namespace Poser.Game.Transforms;
 
-/// <summary>All gizmo/numeric/group edits share the same local-offset semantics.</summary>
-public sealed class ParentedTransformPort(ITransformRuntimePort inner, TransformParenting parents) : ITransformRuntimePort
+/// <summary>Moves a thing that has a parent by changing its offset from that
+/// parent, so a drag, a typed value or a group move keeps it attached. Undo
+/// puts the offset back the same way. Things without a parent are read and
+/// written in the game unchanged.</summary>
+public sealed class ParentRelativeTransforms(ITransformRuntimePort inner, TransformParenting parents) : ITransformRuntimePort
 {
     public int DependencyDepth(TransformTargetId target) => parents.Depth(target.ToSelectionId());
     public TransformPortResult Capture(TransformTargetId target)

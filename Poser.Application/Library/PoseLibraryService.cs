@@ -25,7 +25,6 @@ public sealed class PoseLibraryService : IPoseLibraryService
 
     private readonly ConfigurationService _config;
     private readonly LibraryScanner _scanner;
-    private readonly int _maxSources;
     private readonly object _sync = new();
 
     private PoseLibrarySnapshot _snapshot = EmptySnapshot;
@@ -43,12 +42,10 @@ public sealed class PoseLibraryService : IPoseLibraryService
 
     public PoseLibraryService(
         ConfigurationService config,
-        LibraryScanner scanner,
-        int maxSources = PoseLibraryLimits.MaxSources)
+        LibraryScanner scanner)
     {
         _config = config;
         _scanner = scanner;
-        _maxSources = Math.Clamp(maxSources, 1, PoseLibraryLimits.MaxSources);
         _sourceSignature = BuildSourceSignature();
         _snapshot = new PoseLibrarySnapshot
         {
@@ -58,7 +55,7 @@ public sealed class PoseLibraryService : IPoseLibraryService
             Entries = [],
             Folders = [],
             Sources = CaptureSources(PoseLibrarySourceHealth.Unscanned),
-            SkippedSourceCount = Math.Max(0, _config.Config.Library.Sources.Count - _maxSources)
+            SkippedSourceCount = Math.Max(0, _config.Config.Library.Sources.Count - PoseLibraryLimits.MaxSources)
         };
         _config.OnConfigurationChanged += OnConfigurationChanged;
     }
@@ -212,8 +209,8 @@ public sealed class PoseLibraryService : IPoseLibraryService
         string? detail = null)
     {
         var sources = _config.Config.Library.Sources;
-        var result = new List<PoseLibrarySourceSnapshot>(Math.Min(sources.Count, _maxSources));
-        for (var i = 0; i < Math.Min(sources.Count, _maxSources); i++)
+        var result = new List<PoseLibrarySourceSnapshot>(Math.Min(sources.Count, PoseLibraryLimits.MaxSources));
+        for (var i = 0; i < Math.Min(sources.Count, PoseLibraryLimits.MaxSources); i++)
         {
             var source = sources[i];
             var state = source.Enabled ? health : PoseLibrarySourceHealth.Disabled;
@@ -252,7 +249,7 @@ public sealed class PoseLibraryService : IPoseLibraryService
                 Entries = [],
                 Folders = [],
                 Sources = CaptureSources(PoseLibrarySourceHealth.Failed, detail),
-                SkippedSourceCount = Math.Max(0, _config.Config.Library.Sources.Count - _maxSources)
+                SkippedSourceCount = Math.Max(0, _config.Config.Library.Sources.Count - PoseLibraryLimits.MaxSources)
             });
         }
     }

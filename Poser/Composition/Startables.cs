@@ -28,7 +28,7 @@ internal enum StartStage
     SceneWorkflow,
     SceneCreation,
     CameraWorkspace,
-    ParentingFrames,
+    ParentFollow,
     SceneAutoSave,
     SceneRefreshAndCleanup,
     TargetSync,

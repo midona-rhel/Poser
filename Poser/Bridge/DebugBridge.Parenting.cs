@@ -10,13 +10,13 @@ using Poser.Application.Scene;
 using Poser.Application.Transforms;
 using Poser.Domain.Identity;
 using Poser.Domain.Transforms;
+using Poser.Game.Transforms;
 
 namespace Poser.Bridge;
 
 public sealed partial class DebugBridge
 {
     private readonly TransformParenting _parenting;
-    private readonly IParentingRuntime _parentingRuntime;
     private readonly SceneSession _sceneSession;
     private readonly Application.Posing.IActorColliderCapture _bodyColliders;
 
@@ -82,20 +82,20 @@ public sealed partial class DebugBridge
                 else return Json(new { error = "Use the actor lifecycle route for actors." });
                 return Json(new { ok = true });
             }
-            if (child.Bone == null && TransformTargetResolver.Target(child) is { } targetId && _parentingRuntime.Read(child) is { } world)
+            if (child.Bone == null && TransformTargetResolver.Target(child) is { } targetId && _parenting.ReadWorld(child) is { } world)
             {
                 float Number(string key) => float.Parse(query.GetValueOrDefault(key, "0"), CultureInfo.InvariantCulture);
                 return Json(_transforms.SetAbsolute(targetId, world with
                 { Position = world.Position + new Vector3(Number("dx"), Number("dy"), Number("dz")) }, "Move parenting test entity"));
             }
         }
-        _parentingRuntime.BeginRead();
+        _parenting.RefreshBoneReads();
         return JsonSerializer.Serialize(entities.Where(e => e.Id.Bone == null || query.ContainsKey("bones")).Select(e =>
         {
             var link = _parenting.Read(e.Id);
-            return new { id = e.Id.ToString(), e.Name, world = _parentingRuntime.Read(e.Id),
+            return new { id = e.Id.ToString(), e.Name, world = _parenting.ReadWorld(e.Id),
                 parent = link?.Target.ToString(), offset = link?.Offset,
-                parentWorld = link == null ? null : _parentingRuntime.Read(link.Target),
+                parentWorld = link == null ? null : _parenting.ReadWorld(link.Target),
                 collider = e.Id.Overlay is { } overlay ? _viewport.GetCollider(overlay) : null };
         }).ToArray(), new JsonSerializerOptions { IncludeFields = true });
     }

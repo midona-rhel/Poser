@@ -23,7 +23,7 @@ public interface ISelectionPlacement
 
 public sealed class SelectionPlacement(
     SceneSession scene, SceneGroups groups,
-    IViewportReads viewport, ICameraProjection camera, ITransformFacade transforms) : ISelectionPlacement
+    IViewportReads viewport, ICameraProjection camera, ITransformEditing transforms) : ISelectionPlacement
 {
     public bool CanPlace(SelectionId target) => ResolveOne(target) is { } id && Read(id) != null;
 

@@ -21,7 +21,7 @@ namespace Poser.Game.Posing;
 public sealed class ActorColliderCapture(
     IEntityBindings bindings, IIntegrationResolutionPort integration, IPenumbraPort penumbra, IDataManager data,
     Scene.SceneLifecycleHistory lifecycle, SceneGroups groups, IGPoseService gpose, IPluginLog log,
-    Application.Transforms.TransformParenting parenting, GroupSteps groupSteps) : Application.Posing.IActorColliderCapture
+    Transforms.TransformParenting parenting, GroupSteps groupSteps) : Application.Posing.IActorColliderCapture
 {
     private sealed record ModelSnapshot(string Path, string OriginalPath, ushort Race, uint Attributes, uint Shapes);
     private sealed record Snapshot(ModelSnapshot[] Models, Dictionary<string, Matrix4x4> Bones,

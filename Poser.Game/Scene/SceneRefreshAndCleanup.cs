@@ -277,12 +277,10 @@ public sealed class SceneRefreshAndCleanup : IDisposable
             if (!result.StateChanged)
                 return;
 
-            // Selective reconciliation against the refreshed exact-generation
-            // scene: a gesture whose every target is still current survives and
-            // accepts the new revision (unrelated actors/slots may come and go
-            // mid-drag); any stale target cancels it once through the rebuilt
-            // bindings with no history entry. History patches follow the same
-            // rule per patch.
+            // A drag whose targets are all still in the scene, in the same
+            // generation, carries on: other actors may come and go during it.
+            // A drag with a target that is gone or was remade is cancelled once,
+            // with no undo step. Each undo step is checked the same way.
             _gestures.ReconcileScene(_scene.Contains);
             _history.Reconcile(
                 _scene.Contains,
@@ -310,10 +308,10 @@ public sealed class SceneRefreshAndCleanup : IDisposable
     }
 
     /// <summary>
-    /// The one place a refresh runs: at most one per frame, for whatever
-    /// requested it since the last. Also the bounded retry pump for actors
-    /// whose skeletons were not ready at discovery (0.5 s doubling to 5 s
-    /// while such an actor remains present) and the idle poll.
+    /// The one place a refresh runs: at most one per frame, for whatever asked
+    /// for it since the last. It also retries actors whose skeletons were not
+    /// ready when they were found, every 0.5 s at first and doubling up to 5 s
+    /// while such an actor is there, and runs the once-a-second check.
     /// </summary>
     private void OnFrameworkUpdate(IFramework framework)
     {
@@ -438,8 +436,8 @@ public sealed class SceneRefreshAndCleanup : IDisposable
             reason,
             detail =>
             {
-                // Cancelling a face capture that is waiting cannot fail, so
-                // there is nothing to report here.
+                // The capture's result describes its own last run, not this
+                // cancel, so it is not reported as this cancel's failure.
                 _facialCapture.CancelPending(detail);
                 return null;
             },

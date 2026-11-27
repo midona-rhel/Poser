@@ -1,5 +1,6 @@
 using Poser.Application.Presentation;
 using Poser.Application.Transforms;
+using Poser.Game.Transforms;
 using Poser.Domain;
 using Poser.Domain.Identity;
 using Poser.Game.Presentation;

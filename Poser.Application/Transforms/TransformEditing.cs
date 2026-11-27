@@ -10,11 +10,11 @@ namespace Poser.Application.Transforms;
 
 /// <summary>The one way the interface moves things: drags, typed values,
 /// undo and redo.</summary>
-public sealed class TransformFacade : ITransformFacade
+public sealed class TransformEditing : ITransformEditing
 {
     private readonly SceneSession _scene;
     private readonly TransformGestureService _gestures;
-    private readonly TransformCommandService _commands;
+    private readonly TransformCommands _commands;
     private readonly GroupTransformCoordinator _groups;
 
     private readonly UndoJournal _journal;
@@ -24,10 +24,10 @@ public sealed class TransformFacade : ITransformFacade
     private readonly IPoseInteraction _interaction;
     private readonly Viewport.IViewportReads _viewport;
 
-    public TransformFacade(
+    public TransformEditing(
         SceneSession scene,
         TransformGestureService gestures,
-        TransformCommandService commands,
+        TransformCommands commands,
         UndoJournal journal,
         GroupTransformCoordinator groups,
         ValueJournal values,
@@ -161,14 +161,13 @@ public sealed class TransformFacade : ITransformFacade
         Func<string, TransformDeltaMode?>? symmetryFor = null,
         bool relativeSecondaryBones = false,
         GroupScaleMode groupScale = GroupScaleMode.SizesAndSpacing,
-        bool groupTransform = false,
         IReadOnlyList<SelectionId>? selection = null)
     {
         // Several entities, or one entity of a multi-entity selection, move
         // as a group: around their shared centre, in world space, and only
         // when the whole selection can move.
         var selected = selection ?? _scene.Selection.Selected;
-        groupTransform |= (targetIds.Count > 1
+        var groupTransform = (targetIds.Count > 1
             || Poser.Application.Selection.EntitySelection.IsMultiEntity(selected))
             && targetIds.All(target => target.Kind != TransformTargetKind.Bone);
         Guid? groupId = null;

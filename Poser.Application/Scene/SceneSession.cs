@@ -18,14 +18,16 @@ public enum SceneRefreshOutcome
     /// the change failed.</summary>
     AppliedWithNotificationFailures,
 
-    /// <summary>The new picture has the same entities as the current one.</summary>
+    /// <summary>The new picture is identical to the current one, revision
+    /// included.</summary>
     NoChange,
 
     /// <summary>The new picture's revision is older than the current one's.</summary>
     RejectedOlderRevision,
 
-    /// <summary>The new picture failed <see cref="SceneSnapshotValidator"/>:
-    /// an entry is incomplete or names something that is not in it.</summary>
+    /// <summary>The new picture is missing, failed
+    /// <see cref="SceneSnapshotValidator"/>, or names an older generation of an
+    /// entity than this session has seen.</summary>
     RejectedInvalidCandidate,
 
     /// <summary>A new picture was offered from inside the code listening for the
@@ -74,9 +76,9 @@ public sealed record SceneRefreshResult
     public bool Rejected => !Accepted;
 
     /// <summary>
-    /// Compatibility conversion for existing boolean admission checks. New
-    /// callers should inspect <see cref="Outcome"/> so that NoChange and
-    /// post-commit notification failures remain distinguishable.
+    /// True when the new picture was taken or matched the current one. Code
+    /// that needs to tell those apart, or see listener failures, reads
+    /// <see cref="Outcome"/>.
     /// </summary>
     public static implicit operator bool(SceneRefreshResult result) =>
         result.Accepted;
@@ -145,9 +147,10 @@ public sealed class SceneSession
 
     /// <summary>
     /// Checks a new picture of the scene and takes it whole, or not at all. Its
-    /// revision number never goes down. The same revision with the same
-    /// entities is <see cref="SceneRefreshOutcome.NoChange"/>; the same revision
-    /// with changed details, such as one equipment slot, is taken.
+    /// revision number never goes down. A picture identical to the current one,
+    /// revision included, is <see cref="SceneRefreshOutcome.NoChange"/>; one with
+    /// the same revision but a changed value, such as one equipment slot, is
+    /// taken.
     /// </summary>
     public SceneRefreshResult TryRefresh(SceneSnapshot? snapshot)
     {
@@ -306,7 +309,8 @@ public sealed class SceneSession
         return null;
     }
 
-    /// <summary>Checks exact transform-target presence without lineage repair.</summary>
+    /// <summary>Whether this exact move target, generation included, is in the
+    /// scene. A newer generation of the same entity does not count.</summary>
     public bool Contains(TransformTargetId target) =>
         target.Kind switch
         {

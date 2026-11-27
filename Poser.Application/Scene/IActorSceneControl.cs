@@ -5,9 +5,9 @@ using Poser.Domain.Companions;
 
 namespace Poser.Application.Scene;
 
-/// <summary>An actor's place in the scene: what kind of companion it was
-/// spawned as (if any), whether it has room for a companion, and whether it
-/// can be removed.</summary>
+/// <summary>An actor's place in the scene: the minion, mount or ornament kind it
+/// was spawned as (null for an ordinary actor), whether it has room for a
+/// companion, and whether it can be removed.</summary>
 public sealed record ActorSceneReading(CompanionKind? SpawnedKind, bool HasCompanionSlot, bool CanRemove);
 
 public interface IActorSceneControl

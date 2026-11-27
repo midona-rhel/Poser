@@ -143,9 +143,9 @@ internal sealed partial class ActorRemoveRestore : IActorRemoveRestore
     public bool Destroy(object actor)
     {
         var target = (IActor)actor;
-        // One call for both kinds of actor: the spawn service removes an actor
-        // Poser spawned through its own list, and one taken over from the world
-        // through the scene table. An adopted actor first gets the same pre-delete
+        // One call for every kind of actor. An actor Poser spawned is destroyed,
+        // one taken over from the world is handed back, and any other GPose
+        // actor is deleted from the game's object table. An adopted actor first gets the same pre-delete
         // cleanup a scene clear gives it — gaze released, appearance
         // reverted — because after the delete there is nothing left to name.
         if (!_spawns.IsSpawnedActor(target))

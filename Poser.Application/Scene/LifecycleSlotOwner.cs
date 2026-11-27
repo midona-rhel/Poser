@@ -73,8 +73,9 @@ public sealed class LifecycleSlotOwner<TInstance, TSlot>
     public bool CaptureAndRemove(TSlot slot)
     {
         var previous = _current(slot);
-        // Removal can publish a scene refresh immediately. Preserve the old
-        // target before that refresh reconciles history against live bindings.
+        // Removing can trigger a scene refresh at once, which drops undo steps
+        // for entities that are gone. Keep the old move target first, so its
+        // undo steps survive the refresh.
         if (previous is not null && _transformTarget?.Invoke(previous) is { } target)
             _history?.RetainLifecycleTarget(target, () =>
                 _current(slot) is { } live ? _transformTarget(live) : null);

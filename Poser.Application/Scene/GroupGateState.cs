@@ -25,8 +25,8 @@ public sealed class GroupGateState(
     private readonly SceneGroups _groups = groups;
     private readonly ISelectedEntityActions _entities = entities;
     private readonly IScenePlaybackControl _playback = playback;
-    /// <summary>Makes the world match every group's gates, after the model
-    /// was put back: the journal's way to undo a gate or a dissolve.</summary>
+    /// <summary>Makes the scene match every group's gates after undo has put the
+    /// groups back. This is how undo reverses a gate or an ungroup.</summary>
     public void Reapply()
     {
         foreach (var group in _groups.All)
