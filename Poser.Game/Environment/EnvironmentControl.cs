@@ -10,8 +10,8 @@ namespace Poser.Game.Environment;
 
 /// <summary>
 /// Changes the time, weather, sky sections, interior brightness, water and
-/// festivals, and records each change as one undo step. The Environment window
-/// and scene loading change the environment through here; the Library reads
+/// festivals, and records each change as one undo step. The Environment page
+/// of the main window and scene loading change the environment through here; the Library reads
 /// weather names from it.
 /// </summary>
 public sealed class EnvironmentControl : IEnvironmentControl
@@ -42,18 +42,21 @@ public sealed class EnvironmentControl : IEnvironmentControl
     public void SetMinuteOfDay(int v) => SetTime("MinuteOfDay", "Set time of day", () => _environment.MinuteOfDay, x => _environment.MinuteOfDay = x, v);
     public void SetDayOfMonth(int v) => SetTime("DayOfMonth", "Set day of month", () => _environment.DayOfMonth, x => _environment.DayOfMonth = x, v);
 
-    /// <summary>Setting the time of day or the day of the month freezes the
-    /// time. The undo step keeps whether the time was frozen before, so undo
-    /// lets a running time run again.</summary>
+    /// <summary>Writing the time of day or the day of the month freezes the
+    /// clock (EnvironmentService.MinuteOfDay and DayOfMonth). So the undo step
+    /// holds the value together with whether the clock was frozen, and writes
+    /// the value first and the freeze last: undo starts a clock that was
+    /// running before, and redo freezes it again.</summary>
     private void SetTime(string property, string description, Func<int> read, Action<int> write, int value) =>
-        _journal.Set((_environment, property), description,
-            () => (Value: read(), Frozen: _environment.IsTimeFrozen),
-            ValueWrites.Unchecked<(int Value, bool Frozen)>(x =>
+        Set<(int Value, bool Frozen)>(property, description,
+            () => (read(), _environment.IsTimeFrozen),
+            x =>
             {
                 write(x.Value);
                 _environment.IsTimeFrozen = x.Frozen;
-            }),
+            },
             (value, true));
+
     public void SetTimeFrozen(bool v) => Set("IsTimeFrozen", v ? "Freeze time" : "Release time", () => _environment.IsTimeFrozen, x => _environment.IsTimeFrozen = x, v);
     public void SetResetTimeOnGPoseExit(bool v) => Set("ResetTimeOnGPoseExit", "Set time restore", () => _environment.ResetTimeOnGPoseExit, x => _environment.ResetTimeOnGPoseExit = x, v);
 
