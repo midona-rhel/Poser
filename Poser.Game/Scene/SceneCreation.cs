@@ -30,19 +30,18 @@ public sealed class SceneCreation : ISceneCreation
     private readonly SceneRuntimeHandles _handles;
     private readonly IPlacementAnchorSource _anchors;
     private readonly Application.Settings.ConfigurationService _configuration;
-    private readonly ParentingRuntime _transforms;
     private readonly IVirtualCameraService _cameras;
     private readonly ILightingService _lighting;
     private readonly IOverlayNodeService _overlays;
     private readonly Application.Integration.IntegrationSelectors _integration;
     private readonly IPluginLog _log;
-    private readonly Application.Transforms.TransformParenting _parenting;
+    private readonly Transforms.TransformParenting _parenting;
 
     public SceneCreation(IFramework framework, ISessionGenerationSource sessions,
         IActorManager actors, IActorSpawnService spawn, ISceneLifecycleHistory lifecycle,
-        IEntityBindings bindings, ISkeletonService skeletons, IPlacementAnchorSource anchors, Application.Settings.ConfigurationService configuration, ParentingRuntime transforms, IVirtualCameraService cameras, ILightingService lighting, IOverlayNodeService overlays,
+        IEntityBindings bindings, ISkeletonService skeletons, IPlacementAnchorSource anchors, Application.Settings.ConfigurationService configuration, IVirtualCameraService cameras, ILightingService lighting, IOverlayNodeService overlays,
         Application.Integration.IntegrationSelectors integration, IPluginLog log,
-        Application.Transforms.TransformParenting parenting)
+        Transforms.TransformParenting parenting)
     {
         _framework = framework;
         _sessions = sessions;
@@ -53,7 +52,6 @@ public sealed class SceneCreation : ISceneCreation
         _skeletons = skeletons;
         _anchors = anchors;
         _configuration = configuration;
-        _transforms = transforms;
         _cameras = cameras;
         _lighting = lighting;
         _overlays = overlays;
@@ -148,10 +146,10 @@ public sealed class SceneCreation : ISceneCreation
         var result = Track(kind, entity);
         if (result.Handle is not { } handle) return result;
         // Read now: by the time an actor can be placed, its source may have moved.
-        var sourcePlace = source is { Camera: null } original ? _transforms.Read(original) : null;
+        var sourcePlace = source is { Camera: null } original ? _parenting.ReadWorld(original) : null;
         void Apply()
         {
-            if (sourcePlace is { } place && !_transforms.WriteEntity(entity, place))
+            if (sourcePlace is { } place && !_parenting.WriteEntityWorld(entity, place))
                 _log.Warning("The duplicate could not be put where its source is.");
             if (position is { } point)
             {
@@ -162,8 +160,8 @@ public sealed class SceneCreation : ISceneCreation
                         camera.FixedPosition = point - camera.PositionOffset - camera.TargetOffset;
                     else camera.PendingOrbitPosition = point;
                 }
-                else if (_transforms.ReadEntity(entity) is not { } transform
-                    || !_transforms.WriteEntity(entity, transform with { Position = point }))
+                else if (_parenting.ReadEntityWorld(entity) is not { } transform
+                    || !_parenting.WriteEntityWorld(entity, transform with { Position = point }))
                     _log.Warning("The new entity could not be placed.");
             }
             if (source is { } copied && Resolve(handle) is { } target && !_parenting.Copy(copied, target))

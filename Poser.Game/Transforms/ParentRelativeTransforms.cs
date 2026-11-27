@@ -1,7 +1,9 @@
 using Poser.Domain.Identity;
 using Poser.Domain.Transforms;
 
-namespace Poser.Application.Transforms;
+using Poser.Application.Transforms;
+
+namespace Poser.Game.Transforms;
 
 /// <summary>Moves a thing that has a parent by changing its offset from that
 /// parent, so a drag, a typed value or a group move keeps it attached. Undo

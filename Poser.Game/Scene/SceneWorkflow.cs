@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using Poser.Domain.Operations;
 using Poser.Application.Lifecycle;
 using Poser.Application.Transforms;
+using Poser.Game.Transforms;
 using Poser.Domain.Identity;
 using Poser.Documents.Files;
 using Poser.Documents.Scene;
