@@ -53,7 +53,7 @@ public class GizmoOverlayWindow : Window
     private readonly ICameraProjection _cameraService;
     private readonly IPoseInteraction _poseInteraction;
     private readonly IIkConfigurationPort _ikPort;
-    private readonly ITransformFacade _cleanTransforms;
+    private readonly ITransformEditing _cleanTransforms;
     private readonly IGazeControl _gazeValues;
     // Controls whether hidden bones keep their gizmo.
     private readonly SkeletonOverlayPresentation _presentation;
@@ -174,7 +174,7 @@ public class GizmoOverlayWindow : Window
         ICameraProjection cameraService,
         IPoseInteraction poseInteraction,
         IIkConfigurationPort ikPort,
-        ITransformFacade cleanTransforms,
+        ITransformEditing cleanTransforms,
         IGazeControl gazeValues,
         SkeletonOverlayPresentation presentation,
         global::Poser.Application.Scene.SceneGroups groups,

@@ -26,7 +26,7 @@ public sealed class UIManager : IUIManager
     private readonly IDalamudPluginInterface _pluginInterface;
     private readonly IGPoseService _gPoseService;
     private readonly IEventBus _eventBus;
-    private readonly ITransformFacade _cleanTransforms;
+    private readonly ITransformEditing _cleanTransforms;
     private readonly UserNotices _notices;
     private readonly IKeyState _keyState;
     private readonly global::Poser.Application.Input.IKeyEvents _keyEvents;
@@ -62,7 +62,7 @@ public sealed class UIManager : IUIManager
         IDalamudPluginInterface pluginInterface,
         IGPoseService gPoseService,
         IEventBus eventBus,
-        ITransformFacade cleanTransforms,
+        ITransformEditing cleanTransforms,
         UserNotices notices,
         IKeyState keyState,
         global::Poser.Application.Input.IKeyEvents keyEvents,

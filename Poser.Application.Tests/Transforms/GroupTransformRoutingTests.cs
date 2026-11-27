@@ -17,7 +17,7 @@ namespace Poser.Application.Tests.Transforms;
 public sealed class GroupTransformRoutingTests
 {
     [Fact]
-    public void Facade_entry_points_always_attach_group_metadata()
+    public void Every_way_of_starting_a_move_records_the_group_values()
     {
         const TransformOperation operation = TransformOperation.Translate;
         var selection = new SelectionSession();
@@ -58,33 +58,33 @@ public sealed class GroupTransformRoutingTests
         using var coordinator = new GroupTransformCoordinator(scene, new SceneGroups(), state, viewport, camera, history);
         using var gestures = new TransformGestureService(scene, runtime, history,
             groupCoordinator: coordinator);
-        var facade = new TransformFacade(scene, gestures,
-            new TransformCommandService(runtime, history, gestures), null!, coordinator, new ValueJournal(history), null!, null!, null!, null!);
+        var editing = new TransformEditing(scene, gestures,
+            new TransformCommands(runtime, history, gestures), null!, coordinator, new ValueJournal(history), null!, null!, null!, null!);
         selection.Add(SelectionId.ForActor(actor));
         selection.Add(SelectionId.ForWorldObject(world));
         selection.Add(SelectionId.ForActor(other));
-        Assert.False(facade.Begin([targets[0]], operation, TransformSpace.World).Success);
-        // Same old signature used by move commands and the world gizmo: no
-        // group flag/id, and a local per-target request.
-        var begin = facade.Begin(targets, operation, TransformSpace.Local);
+        Assert.False(editing.Begin([targets[0]], operation, TransformSpace.World).Success);
+        // The call move commands and the gizmo make: no group flag or id, and
+        // a move in each target's own space.
+        var begin = editing.Begin(targets, operation, TransformSpace.Local);
         Assert.True(begin.Success, begin.Detail);
-        Assert.Equal(new Vector3(1, 1, 2f / 3), facade.ActivePivot);
+        Assert.Equal(new Vector3(1, 1, 2f / 3), editing.ActivePivot);
         var delta = new TransformDelta(Vector3.UnitY,
             Quaternion.CreateFromAxisAngle(Vector3.UnitZ, .4f), new(1.5f));
-        Assert.True(facade.Update(begin.GestureId!.Value, delta).Success);
-        Assert.True(facade.Commit(begin.GestureId.Value).Success);
+        Assert.True(editing.Update(begin.GestureId!.Value, delta).Success);
+        Assert.True(editing.Commit(begin.GestureId.Value).Success);
         var patch = Assert.IsType<TransformPatch>(history.PeekUndo());
         Assert.NotNull(patch.GroupState);
         Assert.True(state.TryRead(null, targets, target => live[target],
             GroupScaleMode.SizesAndSpacing, out _, out _));
 
-        // Exercise both public facade entry styles used by overlay and numeric
-        // editing; both must route scale through the same frozen group frame.
-        var rotate = facade.Begin(targets, TransformOperation.Rotate, TransformSpace.World);
+        // The gizmo and the inspector start a move in different ways; both
+        // must scale through the same stored group frame.
+        var rotate = editing.Begin(targets, TransformOperation.Rotate, TransformSpace.World);
         Assert.True(rotate.Success);
-        Assert.True(facade.Update(rotate.GestureId!.Value, new(Vector3.Zero,
+        Assert.True(editing.Update(rotate.GestureId!.Value, new(Vector3.Zero,
             Quaternion.CreateFromAxisAngle(Vector3.UnitZ, .8f), Vector3.One)).Success);
-        Assert.True(facade.Commit(rotate.GestureId.Value).Success);
+        Assert.True(editing.Commit(rotate.GestureId.Value).Success);
         foreach (var mode in new[] { GroupScaleMode.SpacingOnly, GroupScaleMode.SizesAndSpacing })
         {
             var before = live.ToDictionary();
@@ -93,10 +93,10 @@ public sealed class GroupTransformRoutingTests
             Dictionary<TransformTargetId, PoseTransform>? overlayResult = null;
             foreach (var explicitGroup in new[] { false, true })
             {
-                var scale = facade.Begin(targets, TransformOperation.Scale, TransformSpace.World,
+                var scale = editing.Begin(targets, TransformOperation.Scale, TransformSpace.World,
                     PivotMode.Centroid, groupScale: mode, groupTransform: explicitGroup);
                 Assert.True(scale.Success, scale.Detail);
-                Assert.True(facade.Update(scale.GestureId!.Value,
+                Assert.True(editing.Update(scale.GestureId!.Value,
                     new(Vector3.Zero, Quaternion.Identity, new(2, 1, 1))).Success);
                 foreach (var target in targets)
                 {
@@ -106,21 +106,21 @@ public sealed class GroupTransformRoutingTests
                 }
                 if (overlayResult == null) overlayResult = live.ToDictionary();
                 else Assert.Equal(overlayResult, live);
-                Assert.True(facade.Cancel(scale.GestureId.Value).Success);
+                Assert.True(editing.Cancel(scale.GestureId.Value).Success);
                 Assert.Equal(before, live);
             }
         }
         // A pinned single entity remains editable while the workspace holds
         // a group; a pinned group remains editable with a different selection.
-        var single = facade.Begin([targets[0]], operation, TransformSpace.World,
+        var single = editing.Begin([targets[0]], operation, TransformSpace.World,
             selection: [SelectionId.ForActor(actor)]);
         Assert.True(single.Success, single.Detail);
-        Assert.True(facade.Cancel(single.GestureId!.Value).Success);
+        Assert.True(editing.Cancel(single.GestureId!.Value).Success);
         var pinned = selection.Selected.ToArray();
         selection.Select(SelectionId.ForActor(other));
-        var group = facade.Begin(targets, operation, TransformSpace.World, selection: pinned);
+        var group = editing.Begin(targets, operation, TransformSpace.World, selection: pinned);
         Assert.True(group.Success, group.Detail);
-        Assert.True(facade.Cancel(group.GestureId!.Value).Success);
+        Assert.True(editing.Cancel(group.GestureId!.Value).Success);
         Assert.Equal(SelectionId.ForActor(other), selection.Primary);
     }
 }

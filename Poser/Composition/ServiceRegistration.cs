@@ -238,15 +238,15 @@ internal static class ServiceRegistration
     private static IServiceCollection AddTransformFeature(
         this IServiceCollection services)
     {
-        services.AddSingleton<TransformRuntimePort>();
+        services.AddSingleton<GameTransforms>();
         services.AddSingleton<ParentingRuntime>();
         services.AddSingleton<IParentingRuntime>(sp => sp.GetRequiredService<ParentingRuntime>());
         services.AddSingleton<TransformParenting>();
         services.AddSingleton<ITransformParenting>(sp => sp.GetRequiredService<TransformParenting>());
-        services.AddSingleton<ITransformRuntimePort>(sp => new ParentedTransformPort(
-            sp.GetRequiredService<TransformRuntimePort>(), sp.GetRequiredService<TransformParenting>()));
-        services.AddSingleton<ParentingFrameRuntime>();
-        services.AddStartable<ParentingFrameRuntime>(StartStage.ParentingFrames);
+        services.AddSingleton<ITransformRuntimePort>(sp => new ParentRelativeTransforms(
+            sp.GetRequiredService<GameTransforms>(), sp.GetRequiredService<TransformParenting>()));
+        services.AddSingleton<ParentFollowTick>();
+        services.AddStartable<ParentFollowTick>(StartStage.ParentingFrames);
         services.AddSingleton<TransformGestureService>();
         services.AddSingleton<Application.Lifecycle.ActionGate>();
         services.AddStartable(StartStage.RunningActions, RunningActions.Register);
@@ -261,7 +261,7 @@ internal static class ServiceRegistration
         services.AddSingleton(sp => new System.Lazy<Application.Scene.GroupSteps>(
             sp.GetRequiredService<Application.Scene.GroupSteps>));
         services.AddSingleton<DisruptiveSteps>();
-        services.AddSingleton<TransformCommandService>();
+        services.AddSingleton<TransformCommands>();
         services.AddSingleton<GroupTransformState>();
         services.AddSingleton<GroupTransformCoordinator>();
         services.AddSingleton<PoseEditService>();
@@ -285,8 +285,8 @@ internal static class ServiceRegistration
                         log.Information($"Pose edit '{description}': {result.Detail}");
                 });
         });
-        services.AddSingleton<TransformFacade>();
-        services.AddSingleton<ITransformFacade>(sp => sp.GetRequiredService<TransformFacade>());
+        services.AddSingleton<TransformEditing>();
+        services.AddSingleton<ITransformEditing>(sp => sp.GetRequiredService<TransformEditing>());
         services.AddSingleton<IPoseInteraction, Game.Posing.PoseInteraction>();
         services.AddSingleton<IIkBake>(sp => sp.GetRequiredService<Game.Posing.IkBakeCapture>());
         services.AddSingleton<IIkConfigurationPort, IkConfigurationPort>();

@@ -12,7 +12,7 @@ namespace Poser.Application.Transforms;
 
 /// <summary>Moving, turning and scaling things: drags, typed values, undo and
 /// redo.</summary>
-public interface ITransformFacade
+public interface ITransformEditing
 {
     TransformGestureId? ActiveGesture { get; }
     Vector3? ActivePivot { get; }

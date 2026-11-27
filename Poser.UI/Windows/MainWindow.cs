@@ -143,7 +143,7 @@ public partial class MainWindow : Window
 
     private readonly EditorState _editorState;
 
-    private readonly ITransformFacade _cleanTransforms;
+    private readonly ITransformEditing _cleanTransforms;
 
     private readonly Application.Posing.IPoseCommands _cleanPose;
 
@@ -335,7 +335,7 @@ public partial class MainWindow : Window
         IScenePlaybackControl playback,
         ISceneDuplication duplication,
         EditorState editorState,
-        ITransformFacade cleanTransforms,
+        ITransformEditing cleanTransforms,
         Application.Posing.IPoseCommands cleanPose,
         Application.Presentation.ICameraTargetControl cameraTargets,
         PoseLibraryPane libraryPane,

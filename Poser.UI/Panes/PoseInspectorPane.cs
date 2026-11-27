@@ -43,7 +43,7 @@ public partial class PoseInspectorPane : IDisposable
     private readonly IPoseInteraction _interaction;
     private readonly Application.Posing.IIkConfigurationPort _ikPort;
     private readonly IIkBake _ikBake;
-    private readonly ITransformFacade _cleanTransforms;
+    private readonly ITransformEditing _cleanTransforms;
     private readonly IPoseCommands _poseCommands;
     private readonly IActorResetControl _actorReset;
     private readonly IGazeControl _gazeValues;
@@ -191,7 +191,7 @@ public partial class PoseInspectorPane : IDisposable
     public PoseInspectorPane(
         global::Poser.Application.Settings.ConfigurationService configuration,
         IPoseInteraction interaction,
-        ITransformFacade cleanTransforms,
+        ITransformEditing cleanTransforms,
         IActorResetControl actorReset,
         IPoseCommands poseCommands,
         IGazeControl gazeValues,

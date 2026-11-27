@@ -10,11 +10,11 @@ namespace Poser.Application.Transforms;
 
 /// <summary>The one way the interface moves things: drags, typed values,
 /// undo and redo.</summary>
-public sealed class TransformFacade : ITransformFacade
+public sealed class TransformEditing : ITransformEditing
 {
     private readonly SceneSession _scene;
     private readonly TransformGestureService _gestures;
-    private readonly TransformCommandService _commands;
+    private readonly TransformCommands _commands;
     private readonly GroupTransformCoordinator _groups;
 
     private readonly UndoJournal _journal;
@@ -24,10 +24,10 @@ public sealed class TransformFacade : ITransformFacade
     private readonly IPoseInteraction _interaction;
     private readonly Viewport.IViewportReads _viewport;
 
-    public TransformFacade(
+    public TransformEditing(
         SceneSession scene,
         TransformGestureService gestures,
-        TransformCommandService commands,
+        TransformCommands commands,
         UndoJournal journal,
         GroupTransformCoordinator groups,
         ValueJournal values,
