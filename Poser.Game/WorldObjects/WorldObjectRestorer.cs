@@ -12,14 +12,14 @@ internal sealed class WorldObjectRestorer
 {
     private readonly IWorldObjectPort _port;
     private readonly VfxLifecycleOwner _vfx;
-    private readonly WorldObjectRespawner _respawner;
+    private readonly WorldObjectSpawner _respawner;
     private readonly IPluginLog _log;
     private readonly Func<AdoptedWorldObject, bool> _isCurrent;
 
     public WorldObjectRestorer(
         IWorldObjectPort port,
         VfxLifecycleOwner vfx,
-        WorldObjectRespawner respawner,
+        WorldObjectSpawner respawner,
         IPluginLog log,
         Func<AdoptedWorldObject, bool> isCurrent)
     {

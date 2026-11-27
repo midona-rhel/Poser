@@ -130,21 +130,14 @@ public interface IWorldNodePort
     /// what the hover found.</summary>
     void WriteOutline(nint address, byte outline);
 
-    /// <summary>Creates a NEW BG object from a model path at the given
-    /// placement — Brio's spawn-by-path (<c>BgObject.Create</c>), the way
-    /// its world-object clone works. Zero when the game refuses. A spawned
-    /// object is Poser's own: destroyed through <see cref="Destroy"/>,
-    /// never restored.</summary>
-    nint Spawn(string path, in Transform placement);
-
-    /// <summary>Captures ownership at allocation, before a later graph read can
-    /// fail. A nonzero identity remains cleanup authority even on failed spawn.</summary>
-    nint Spawn(string path, in Transform placement, out WorldObjectIncarnation identity)
-    {
-        var address = Spawn(path, placement);
-        TryReadIncarnation(address, out identity);
-        return address;
-    }
+    /// <summary>Creates a new model (.mdl), furniture piece (.sgb) or effect
+    /// (.avfx) at <paramref name="placement"/>, the way Brio spawns by path.
+    /// A spawned object is Poser's own: it is destroyed, never restored.
+    /// Returns zero when the game refuses. <paramref name="identity"/> is set
+    /// as soon as the game has made the object, so it is non-zero whenever
+    /// the address is. When the spawn fails after that, a non-zero identity
+    /// names an object that still exists and has to be torn down.</summary>
+    nint Spawn(string path, in Transform placement, out WorldObjectIncarnation identity);
 
     /// <summary>Writes the drawn opacity, 1 fully drawn through 0 gone: a
     /// VFX's alpha, a BG object's dither transparency.</summary>
