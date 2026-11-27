@@ -110,8 +110,8 @@ public sealed partial class PoseLibraryPane
 
     /// <summary>
     /// Applies an MCDF through the same character-file session used by the
-    /// appearance pane. The session reports progress and terminal failures;
-    /// the notification reports only admission failure.
+    /// appearance pane. A refusal to start is reported here; a failure while it
+    /// runs is reported by CharacterFileNotices.
     /// </summary>
     private void ApplyCharacterFile(int index, ActorId? requestedTarget = null)
     {
