@@ -7,12 +7,14 @@ namespace Poser.Game.Overlays;
 /// <summary>
 /// Builds, redraws and frees the game UI nodes that draw overlays (dialog
 /// boxes, speech balloons and status lines). <see cref="OverlayNodeService"/>
-/// uses it; <see cref="KamiToolKitOverlayDrawer"/> is the one in the game, and
-/// tests pass their own.
+/// uses it; <see cref="KamiToolKitOverlayNodeDrawer"/> is the one in the game,
+/// and tests pass their own.
 ///
-/// <para>A node is handed to the game's UI to draw, so it has to be freed
-/// exactly once, and before the game takes that UI down. A node freed twice, or
-/// left behind when Poser unloads, crashes the game.</para>
+/// <para>A node is handed to the game's UI to draw. Freeing it twice, or
+/// leaving it in the game's UI when Poser unloads, crashes the game. A drawer
+/// therefore frees each node only once: <see cref="Destroy"/> on a freed node
+/// does nothing, <see cref="Destroy"/> logs failures instead of throwing, and
+/// <see cref="IDisposable.Dispose"/> frees every node still drawn.</para>
 /// </summary>
 public interface IOverlayNodeDrawer : IDisposable
 {
@@ -25,8 +27,8 @@ public interface IOverlayNodeDrawer : IDisposable
     /// </summary>
     object? Create(OverlayNodeState state);
 
-    /// <summary>Redraws a node with the given values. Every overlay edit goes
-    /// through here.</summary>
+    /// <summary>Redraws a node with the given values. Every edit of a drawn
+    /// overlay goes through here, except a drag.</summary>
     void Apply(object node, OverlayNodeState state);
 
     /// <summary>Takes a node back from the game and frees it. Freeing one that
@@ -38,7 +40,6 @@ public interface IOverlayNodeDrawer : IDisposable
     /// and where it now is. The game has already moved the node. A drag is the
     /// only change to a node that Poser did not make, so the stored position
     /// has to be updated from this, or the next edit would put the node back.
-    /// Called on the game's thread, in the frame the drag ended.
     /// </summary>
     Action<object, Vector2>? Moved { get; set; }
 }

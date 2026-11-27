@@ -617,7 +617,7 @@ internal static class ServiceRegistration
         // every overlay.
         services.AddSingleton<
             Game.Overlays.IOverlayNodeDrawer,
-            Game.Overlays.KamiToolKitOverlayDrawer>();
+            Game.Overlays.KamiToolKitOverlayNodeDrawer>();
         services.AddSingleton<Game.Overlays.OverlayNodeService>();
         services.AddSingleton<IOverlayNodeService>(sp => sp.GetRequiredService<Game.Overlays.OverlayNodeService>());
         services.AddStartable<Game.Overlays.OverlayNodeService>(StartStage.OverlayNodes);

@@ -258,7 +258,7 @@ public sealed class OverlayNodeService : IDisposable, IOverlayNodeService
             if (node == null)
             {
                 _log.Warning(
-                    $"OverlayNodeService: the game refused a {document.Kind} node.");
+                    $"OverlayNodeService: a {document.Kind} node could not be created.");
                 return null;
             }
             var handle = new OverlayNodeHandle(
@@ -311,7 +311,7 @@ public sealed class OverlayNodeService : IDisposable, IOverlayNodeService
         catch (Exception ex)
         {
             _log.Warning(
-                $"OverlayNodeService: re-stating a node failed: {ex.Message}");
+                $"OverlayNodeService: redrawing a node failed: {ex.Message}");
         }
     }
 
