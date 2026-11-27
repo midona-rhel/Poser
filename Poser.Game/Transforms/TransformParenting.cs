@@ -101,7 +101,7 @@ public sealed class TransformParenting(IEntityBindings bindings, IPosingService 
         foreach (var (child, link) in _links)
         {
             if (child.Overlay != null && link.Target.Bone != null
-                && Resolve(child) is IOverlayNode { State.Collider: { Enabled: true } }
+                && Resolve(child) is IOverlayNode { IsValid: true, State.Collider: { Enabled: true } }
                 && Resolve(link.Target) is IBone bone)
                 into.Add(bone);
         }

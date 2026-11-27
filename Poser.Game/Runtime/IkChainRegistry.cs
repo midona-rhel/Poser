@@ -519,7 +519,7 @@ internal sealed unsafe partial class IkChainRegistry
                 if (!collidersRead)
                 {
                     _colliderParents.Clear();
-                    _ikService.AddColliderParents?.Invoke(_colliderParents);
+                    _ikService.ColliderParentSource?.Invoke(_colliderParents);
                     collidersRead = true;
                 }
                 foreach (var bone in _colliderParents)
@@ -529,6 +529,8 @@ internal sealed unsafe partial class IkChainRegistry
             else if (state is { Config.TargetMode: IkTargetMode.Bone, TargetBone: { } target })
                 AddFollowed(chainKey.Skeleton, target, into);
         }
+        // Holds no bone, and so no old skeleton, until the next pass asks again.
+        _colliderParents.Clear();
     }
 
     // Reused by FollowedSkeletons, which the apply pass calls every frame.
