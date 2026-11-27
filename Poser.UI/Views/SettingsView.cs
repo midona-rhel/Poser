@@ -136,7 +136,6 @@ public sealed class SettingsViewModel
     public bool KeepIkGizmoVisibleWhileManipulating;
     public bool ShowWhenGameUiHidden;
     public LibrarySettingsDraft Library = new(new LibraryConfiguration());
-    public LibraryConfiguration SavedLibrary = new();
     public PoseLibrarySnapshot? SourceSnapshot;
     public bool SourceScanBusy;
     public bool ShowSourceIssues;

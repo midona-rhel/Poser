@@ -24,23 +24,6 @@ public sealed class LibrarySettingsDraftTests : IDisposable
         DefaultsSeeded = true,
     };
 
-    private LibraryConfiguration Custom() => new()
-    {
-        Sources = [new LibrarySourceConfig { Name = "Custom", Path = Path.Combine(_root, "missing"), Kind = LibrarySourceKind.Custom }],
-    };
-
-    private static PoseLibrarySnapshot Snapshot(LibraryConfiguration config, params PoseLibrarySourceHealth[] states) => new()
-    {
-        Revision = 1, Generation = 1, TerminalResult = PoseLibraryScanResult.PartialFailure,
-        Folders = [], Entries = [],
-        Sources = config.Sources.Select((source, i) => new PoseLibrarySourceSnapshot
-        {
-            Index = i, Name = source.Name, Path = source.Path, Enabled = source.Enabled,
-            Health = states.Length > i ? states[i] : PoseLibrarySourceHealth.Missing,
-            Detail = "Test reason for " + source.Path,
-        }).ToArray(),
-    };
-
     [Fact]
     public void Legacy_json_quartet_is_recognized_without_rewriting_paths_or_creating_folders()
     {

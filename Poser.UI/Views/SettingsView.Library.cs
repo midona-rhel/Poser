@@ -18,7 +18,7 @@ public static partial class SettingsView
     private static void DrawLibrary(SettingsViewModel vm, PageScope page)
     {
         var issues = vm.SourceSnapshot is { } snapshot
-            ? vm.Library.Issues(snapshot, vm.SavedLibrary) : Array.Empty<LibrarySourceIssue>();
+            ? vm.Library.Issues(snapshot) : Array.Empty<LibrarySourceIssue>();
         int skipped = vm.SourceSnapshot?.SkippedSourceCount ?? 0;
         if (vm.ShowSourceIssues)
         {
@@ -51,7 +51,7 @@ public static partial class SettingsView
                 try
                 {
                     var health = vm.SourceSnapshot is { } current
-                        ? vm.Library.RowHealth(source, current, vm.SavedLibrary) : null;
+                        ? vm.Library.RowHealth(source, current) : null;
                     string path = vm.Library.PathFor(source);
                     void FolderActions(ActionScope actions)
                     {
@@ -137,7 +137,7 @@ public static partial class SettingsView
                     form.Actions(string.Empty, actions =>
                     {
                         actions.Button("Copy path", () => ImGui.SetClipboardText(issue.Health.Path));
-                        if (vm.Library.CanRepair(issue, vm.SavedLibrary))
+                        if (vm.Library.CanRepair(issue))
                             actions.Button("Create folder", () => vm.OnRepairSource?.Invoke(issue),
                                 help: "Create this exact saved folder now. Cancel does not undo filesystem repair.");
                     });
