@@ -12,19 +12,20 @@ using Poser.Domain.Presentation;
 namespace Poser.Game.Overlays;
 
 /// <summary>
-/// Adapts KamiToolKit's native UI overlay controller. Initializes the library on
-/// first use, keeps the created nodes for cleanup, and disposes nodes before the
-/// controller and library. A failed initialization disables further create attempts
-/// for this instance; it does not establish that a later retry would fail.
+/// Draws overlays with KamiToolKit, the library that adds nodes to the game's
+/// UI. The library starts on the first <see cref="Create"/>. If it fails to
+/// start, no further overlays are created until Poser loads again. Every node
+/// built here is kept in a list so that unloading can free the ones still
+/// drawn.
 /// </summary>
-public sealed class KamiToolKitOverlayPort : IOverlayNodePort
+public sealed class KamiToolKitOverlayDrawer : IOverlayNodeDrawer
 {
     private readonly IDalamudPluginInterface _plugin;
     private readonly ITextureProvider _textures;
     private readonly IPluginLog _log;
 
-    /// <summary>Every node this port created and has not yet freed. Reference
-    /// identity: two nodes are the same node only when they are.</summary>
+    /// <summary>Every node built here and not yet freed, compared by
+    /// reference.</summary>
     private readonly HashSet<object> _live =
         new(ReferenceEqualityComparer.Instance);
 
@@ -33,7 +34,7 @@ public sealed class KamiToolKitOverlayPort : IOverlayNodePort
     private bool _failed;
     private bool _disposed;
 
-    public KamiToolKitOverlayPort(
+    public KamiToolKitOverlayDrawer(
         IDalamudPluginInterface plugin,
         ITextureProvider textures,
         IPluginLog log)
@@ -58,8 +59,8 @@ public sealed class KamiToolKitOverlayPort : IOverlayNodePort
             OverlayNodeKind.Status => new StatusShapeNode(),
             _ => new TalkShapeNode(),
         };
-        // Bound to the node, not to the port's listener: the node knows nothing
-        // about tokens, and the token is what the service upstream indexes by.
+        // The node reports only its new position; this adds which node it was,
+        // which is what OverlayNodeService looks overlays up by.
         node.Moved = position => Moved?.Invoke(node, position);
         try
         {
@@ -71,9 +72,9 @@ public sealed class KamiToolKitOverlayPort : IOverlayNodePort
         catch (Exception ex)
         {
             _log.Error(
-                $"KamiToolKitOverlayPort: attaching a {state.Kind} node failed: {ex.Message}");
-            // The node was built but never took: free it here, because nothing
-            // above this line has a token to free it with.
+                $"KamiToolKitOverlayDrawer: attaching a {state.Kind} node failed: {ex.Message}");
+            // The node was built but the game did not take it. Free it here:
+            // the caller gets null and so has nothing to free.
             _live.Remove(node);
             TryDispose(node);
             return null;
@@ -90,7 +91,7 @@ public sealed class KamiToolKitOverlayPort : IOverlayNodePort
 
     public void Destroy(object node)
     {
-        // Not ours, or already freed: inert, per the teardown contract.
+        // A node that is already freed is left alone.
         if (node is not OverlayShapeNode shape || !_live.Remove(shape))
             return;
         try
@@ -100,7 +101,7 @@ public sealed class KamiToolKitOverlayPort : IOverlayNodePort
         catch (Exception ex)
         {
             _log.Warning(
-                $"KamiToolKitOverlayPort: detaching a node failed: {ex.Message}");
+                $"KamiToolKitOverlayDrawer: detaching a node failed: {ex.Message}");
         }
         TryDispose(shape);
     }
@@ -111,10 +112,9 @@ public sealed class KamiToolKitOverlayPort : IOverlayNodePort
             return;
         _disposed = true;
 
-        // Detach every node BEFORE the controller goes, then the controller,
-        // then the library — the exact reverse of the order they were brought
-        // up in. Anything else leaves the game's UI holding a pointer into
-        // memory this plugin is about to release.
+        // Take every node back from the game first, then free the controller,
+        // then the library: the reverse of the order they were made in. In any
+        // other order the game's UI keeps pointing at memory Poser has freed.
         foreach (var node in new List<object>(_live))
         {
             if (node is not OverlayShapeNode shape)
@@ -126,7 +126,7 @@ public sealed class KamiToolKitOverlayPort : IOverlayNodePort
             catch (Exception ex)
             {
                 _log.Warning(
-                    $"KamiToolKitOverlayPort: detaching a node during teardown failed: {ex.Message}");
+                    $"KamiToolKitOverlayDrawer: detaching a node during teardown failed: {ex.Message}");
             }
             TryDispose(shape);
         }
@@ -139,7 +139,7 @@ public sealed class KamiToolKitOverlayPort : IOverlayNodePort
         catch (Exception ex)
         {
             _log.Warning(
-                $"KamiToolKitOverlayPort: disposing the overlay controller failed: {ex.Message}");
+                $"KamiToolKitOverlayDrawer: disposing the overlay controller failed: {ex.Message}");
         }
         _controller = null;
 
@@ -153,12 +153,12 @@ public sealed class KamiToolKitOverlayPort : IOverlayNodePort
         catch (Exception ex)
         {
             _log.Warning(
-                $"KamiToolKitOverlayPort: disposing the node library failed: {ex.Message}");
+                $"KamiToolKitOverlayDrawer: disposing the node library failed: {ex.Message}");
         }
     }
 
-    /// <summary>Brings the library and its controller up on first use, once.
-    /// </summary>
+    /// <summary>Starts the library and its controller the first time a node is
+    /// built.</summary>
     private bool TryGetController(out OverlayController controller)
     {
         controller = null!;
@@ -181,12 +181,12 @@ public sealed class KamiToolKitOverlayPort : IOverlayNodePort
         {
             _failed = true;
             _log.Error(
-                $"KamiToolKitOverlayPort: the node library is unavailable: {ex.Message}");
+                $"KamiToolKitOverlayDrawer: the node library is unavailable: {ex.Message}");
             return false;
         }
     }
 
-    /// <summary>Resolves the status icon path, then applies the node state.</summary>
+    /// <summary>Looks up a status line's icon file, then redraws the node.</summary>
     private void Write(OverlayShapeNode node, OverlayNodeState state)
     {
         if (state.Kind == OverlayNodeKind.Status)
@@ -194,10 +194,9 @@ public sealed class KamiToolKitOverlayPort : IOverlayNodePort
         node.State = state;
     }
 
-    /// <summary>The icon's game path. Dalamud answers for ids the running
-    /// client ships; anything else falls back to the sheet's own naming
-    /// convention rather than leaving the square blank on a client whose
-    /// lookup is merely unhappy.</summary>
+    /// <summary>The game file of an icon. Dalamud knows the icons the game
+    /// ships with; when it doesn't find one, the path is built the way the game
+    /// names its icon files, so the icon is not left blank.</summary>
     private string IconPath(uint iconId)
     {
         if (iconId == 0)
@@ -210,7 +209,7 @@ public sealed class KamiToolKitOverlayPort : IOverlayNodePort
         }
         catch (Exception)
         {
-            // Fall through to the convention below.
+            // Build the path below instead.
         }
         uint group = iconId / 1000 * 1000;
         return string.Create(
@@ -220,8 +219,8 @@ public sealed class KamiToolKitOverlayPort : IOverlayNodePort
 
     private void TryDispose(OverlayShapeNode node)
     {
-        // Cut the inbound edge first: a node being freed must not raise a move
-        // against a token the service has already forgotten.
+        // Stop the node reporting drags first, so a node being freed can't
+        // report a drag for an overlay that is already gone.
         node.Moved = null;
         try
         {
@@ -230,7 +229,7 @@ public sealed class KamiToolKitOverlayPort : IOverlayNodePort
         catch (Exception ex)
         {
             _log.Warning(
-                $"KamiToolKitOverlayPort: freeing a node failed: {ex.Message}");
+                $"KamiToolKitOverlayDrawer: freeing a node failed: {ex.Message}");
         }
     }
 }

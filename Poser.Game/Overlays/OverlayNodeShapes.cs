@@ -15,7 +15,7 @@ namespace Poser.Game.Overlays;
 /// Atlas coordinates follow Ktisis's TalkNode, BalloonNode, and StatusNode layouts.
 /// These staged elements remain visible when the game HUD is hidden.
 /// The node size is set before move mode creates its drag region. Completed drags
-/// update State and notify the port, so later edits retain the new position.
+/// update State and report the drag to the drawer, so later edits retain the new position.
 /// </summary>
 internal abstract class OverlayShapeNode : OverlayNode
 {
@@ -35,8 +35,8 @@ internal abstract class OverlayShapeNode : OverlayNode
     }
 
     /// <summary>The pointer finished dragging this node to the given screen
-    /// position. Set by the port, which is the only thing that knows which
-    /// handle the node belongs to.</summary>
+    /// position. Set by <see cref="KamiToolKitOverlayDrawer"/>, which adds
+    /// which node it was.</summary>
     public Action<Vector2>? Moved { get; set; }
 
     public sealed override OverlayLayer OverlayLayer =>
@@ -64,7 +64,7 @@ internal abstract class OverlayShapeNode : OverlayNode
         }
     }
 
-    /// <summary>The status icon's resolved texture path, supplied by the port
+    /// <summary>The status icon's resolved texture path, supplied by the drawer
     /// (the node layer has no texture service of its own).</summary>
     public string IconPath { get; set; } = string.Empty;
 

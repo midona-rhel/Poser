@@ -172,7 +172,7 @@ public sealed class OverlayNodeHandle : IOverlayNode
 public sealed class OverlayNodeService : IDisposable, IOverlayNodeService
 {
     private sealed class ColliderToken;
-    private readonly IOverlayNodePort _port;
+    private readonly IOverlayNodeDrawer _drawer;
     private readonly IEventBus _events;
     private readonly IPluginLog _log;
     private readonly List<OverlayNodeHandle> _nodes = new();
@@ -180,12 +180,12 @@ public sealed class OverlayNodeService : IDisposable, IOverlayNodeService
     private int _nextId;
     private bool _disposed;
 
-    public OverlayNodeService(IOverlayNodePort port, IEventBus events, IPluginLog log)
+    public OverlayNodeService(IOverlayNodeDrawer drawer, IEventBus events, IPluginLog log)
     {
-        _port = port;
+        _drawer = drawer;
         _events = events;
         _log = log;
-        _port.Moved = OnNodeMoved;
+        _drawer.Moved = OnNodeMoved;
         _events.Subscribe<GPoseStateChangedEvent>(OnGPoseChanged);
     }
 
@@ -233,7 +233,7 @@ public sealed class OverlayNodeService : IDisposable, IOverlayNodeService
     /// <summary>False after unloading or when the overlay library could not
     /// start. The library starts on the first create, so true does not promise
     /// that the next create works.</summary>
-    public bool IsAvailable => !_disposed && _port.IsAvailable;
+    public bool IsAvailable => !_disposed && _drawer.IsAvailable;
 
     /// <summary>Creates an overlay of <paramref name="kind"/> with that kind's
     /// starting values. Null when the game refused it.</summary>
@@ -254,7 +254,7 @@ public sealed class OverlayNodeService : IDisposable, IOverlayNodeService
         try
         {
             var node = document.Kind == OverlayNodeKind.Collider
-                ? new ColliderToken() : _port.Create(document);
+                ? new ColliderToken() : _drawer.Create(document);
             if (node == null)
             {
                 _log.Warning(
@@ -306,7 +306,7 @@ public sealed class OverlayNodeService : IDisposable, IOverlayNodeService
             return;
         try
         {
-            _port.Apply(node, state);
+            _drawer.Apply(node, state);
         }
         catch (Exception ex)
         {
@@ -319,9 +319,9 @@ public sealed class OverlayNodeService : IDisposable, IOverlayNodeService
     {
         if (handle.Node is not { } node)
             return;
-        // The port catches and logs its own failures.
+        // The drawer catches and logs its own failures.
         if (node is not ColliderToken)
-            _port.Destroy(node);
+            _drawer.Destroy(node);
         handle.Invalidate();
     }
 
@@ -393,10 +393,10 @@ public sealed class OverlayNodeService : IDisposable, IOverlayNodeService
         if (_disposed)
             return;
         _disposed = true;
-        _port.Moved = null;
+        _drawer.Moved = null;
         _events.Unsubscribe<GPoseStateChangedEvent>(OnGPoseChanged);
         DestroyAll();
-        // The port also frees any node the list above did not know about.
-        _port.Dispose();
+        // The drawer also frees any node the list above did not know about.
+        _drawer.Dispose();
     }
 }
