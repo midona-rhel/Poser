@@ -77,12 +77,14 @@ public unsafe class BonePosingService : IBonePosingService
             bodyProfiles.CustomizePlusRunning
             && bindings.GetActorId(actor) is { } id && bodyProfiles.CaptureBodyProfile(id) is { Success: true } read
                 ? read.Value : null);
+        var unposed = new UnposedSkeletons();
         _ik = new IkChainRegistry(
-            _stacks, ikService, bindings, skeletonService, new IkHeldTargets(_stacks, bindings, _customizePlus, skeletonService));
+            _stacks, ikService, bindings, skeletonService,
+            new IkHeldTargets(_stacks, bindings, _customizePlus, skeletonService, unposed));
 
         _apply = new BoneApplyPass(
             log, gPoseService, skeletonService, actorManager, ikService, gazeFrames,
-            _stacks, _ik, _transitive, PurgeSkeletonState,
+            _stacks, _ik, unposed, _transitive, PurgeSkeletonState,
             new KineDriverRerun(log, scanner),
             () => _configuration.Config.Skeleton.DriversFollowPose);
         _snapshot = new BoneSnapshotPass(

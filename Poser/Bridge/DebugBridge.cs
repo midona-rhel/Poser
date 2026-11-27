@@ -107,6 +107,7 @@ public sealed partial class DebugBridge : IDisposable
             "/emote" => query.GetValueOrDefault("list") == "1",
             "/mcdf" => !query.Keys.Any(key => key is "import" or "spawn" or "reset" or "export"),
             "/selection" or "/parenting" => query.Count == 0,
+            "/grouptransform" => !query.Keys.Any(key => key is "dx" or "dy" or "dz" or "yaw" or "scale"),
             _ => false,
         };
         return reads ? null : Json(new { ok = false, Detail = $"Wait for {running.Name} to finish." });
@@ -572,6 +573,7 @@ public sealed partial class DebugBridge : IDisposable
         {
             case "/groups": return Json(ReadGroups());
             case "/group": return Json(GroupCommand(query));
+            case "/grouptransform": return Json(GroupTransformCommand(query));
             case "/catalogmodels": return Json(CatalogModels(query));
             case "/actormodel": return Json(ActorModel(query));
             case "/propmodel": return Json(PropModelCommand(query));

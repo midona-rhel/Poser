@@ -32,6 +32,19 @@ public static class BoneWorld
         return TransformMath.IsFinite(world.Position) && TransformMath.IsFinite(world.Rotation) ? world : null;
     }
 
+    /// <summary>Where the apply pass last left a bone, in the world: its model-space
+    /// transform at the end of the last pass, through the skeleton's model matrix.
+    /// This is before Customize+ changes the pose at draw time, the same space as
+    /// <see cref="ReadCurrent"/>. Null off an invalid skeleton or when the result is
+    /// not finite.</summary>
+    internal static Transform? LastPass(IBone bone)
+    {
+        if (bone.Skeleton is not Skeleton skeleton || !skeleton.IsValid)
+            return null;
+        var world = Transform.FromMatrix(bone.LastRawTransform.ToMatrix() * skeleton.GetModelMatrix());
+        return TransformMath.IsFinite(world.Position) && TransformMath.IsFinite(world.Rotation) ? world : null;
+    }
+
     /// <summary>Null off an invalid skeleton or when the result is not
     /// finite.</summary>
     public static Transform? Of(IBone bone)
